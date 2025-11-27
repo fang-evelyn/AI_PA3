@@ -1,73 +1,50 @@
-import copy
 import random
+import math
+import sys
+import copy
 
-class Node:
-    def __init__(self, board, player_to_move, parent=None, move=None):
-        self.board = board # The board's current state at this node
-        self.player_to_move = player_to_move  # Whose turn is it at this node
-        self.parent = parent
-        self.move = move # Move that was taked to get here from parent
-        self.children = {} # move -> child Node
-        self.wi = 0.0 # total reward value of the node
-        self.ni = 0 # visit count
-
+# Board implementation - handles the connect 4 game state
 class Board:
-    
     def __init__(self, cols=7, rows=6):
         self.cols = cols
         self.rows = rows
-        # None = empty, 1 = Red player, 2 = Yellow player
         self.board = [[None for _ in range(rows)] for _ in range(cols)]
     
-    def clear_board(self, cols=7, rows=6):
-        self.board = [[None for _ in range(rows)] for _ in range(cols)]
-
     def drop_in_slot(self, col, player):
-        #drop a piece in column (1-7), modifies board in place
         col_index = col - 1
-        #find first empty spot from bottom
         for i in range(self.rows):
             if self.board[col_index][i] is None:
                 self.board[col_index][i] = player
                 return
     
     def undo_move(self, col):
-        #remove top piece from column 
         col_index = col - 1
-        #find topmost piece and remove it
         for i in range(self.rows - 1, -1, -1):
             if self.board[col_index][i] is not None:
                 self.board[col_index][i] = None
                 return
     
     def is_slot_open(self, col):
-        #check if column has space (1-7)
         col_index = col - 1
         if col_index < 0 or col_index >= self.cols:
             return False
-        #check if top cell is empty
         return self.board[col_index][self.rows - 1] is None
     
     def get_legal_moves(self):
-        #get all columns that aren't full (returns 1-7)
         return [col + 1 for col in range(self.cols) if self.is_slot_open(col + 1)]
     
     def is_full(self):
-        #check if entire board is full
         for col in range(self.cols):
             if self.board[col][self.rows - 1] is None:
                 return False
         return True
     
     def is_won_by(self, player):
-        #check if player won any direction
-        return (self._check_horizontal(player) or 
-                self._check_vertical(player) or 
-                self._check_diagonal_up(player) or 
-                self._check_diagonal_down(player))
+        # check all win conditions
+        return (self._check_horizontal(player) or self._check_vertical(player) or 
+                self._check_diagonal_up(player) or self._check_diagonal_down(player))
     
     def _has_win(self, player, cells):
-        #check for 4 in a row in a list of cells
         count = 0
         for cell in cells:
             if cell == player:
@@ -79,7 +56,6 @@ class Board:
         return False
     
     def _check_horizontal(self, player):
-        #check horizontal wins left/right
         for row in range(self.rows):
             row_cells = [self.board[col][row] for col in range(self.cols)]
             if self._has_win(player, row_cells):
@@ -87,14 +63,12 @@ class Board:
         return False
     
     def _check_vertical(self, player):
-        #check vertical wins up/down
         for col in range(self.cols):
             if self._has_win(player, self.board[col]):
                 return True
         return False
     
     def _check_diagonal_up(self, player):
-        #check diagonal wins bottom/left to top/right
         for start_col in range(self.cols - 3):
             for start_row in range(self.rows - 3):
                 diag = [self.board[start_col + i][start_row + i] for i in range(4)]
@@ -103,7 +77,6 @@ class Board:
         return False
     
     def _check_diagonal_down(self, player):
-        #check diagonal wins top/left to bottom/right
         for start_col in range(self.cols - 3):
             for start_row in range(3, self.rows):
                 diag = [self.board[start_col + i][start_row - i] for i in range(4)]
@@ -112,295 +85,397 @@ class Board:
         return False
     
     def is_terminal(self):
-        #check if game is over
         return self.is_won_by(1) or self.is_won_by(2) or self.is_full()
     
     def get_winner(self):
-        #return winner: -1 (Red), 1 (Yellow), 0 (draw), None (not over)
+        # returns -1 for red win, 1 for yellow win, 0 for draw
         if self.is_won_by(1):
-            return -1  # Red wins
+            return -1
         elif self.is_won_by(2):
-            return 1   # Yellow wins
+            return 1
         elif self.is_full():
-            return 0   # Draw
-        else:
-            return None  # Not over yet
-    
-    def board_to_str(self):
-        #convert board to string (O=empty, R=Red, Y=Yellow)
-        lines = []
-        for row in range(self.rows - 1, -1, -1):
-            row_chars = []
-            for col in range(self.cols):
-                cell = self.board[col][row]
-                if cell is None:
-                    row_chars.append('O')
-                elif cell == 1:
-                    row_chars.append('\033[91mR\033[0m') # Text between "\033[91m" and "\033[0m" is actual text turned red
-                else:  #cell == 2
-                    row_chars.append('\033[33mY\033[0m') # Text between "\033[33m" and "\033[0m" is actual text turned yellow3
-            lines.append(''.join(row_chars))
-        return '\n'.join(lines)
-    
-    def __str__(self):
-        return self.board_to_str()
+            return 0
+        return None
 
-    def play_manual(self):
-        self.clear_board() # making sure we play with a clean board
 
-        turn = 0 # tracks turns
-        while not self.is_terminal(): # while the game is not over, keep looping
-            print(f"Current Board:\n{board}")
-            if turn % 2 == 0: # for red player's turn
-                print("\nRed Player Turn: ")
-                legal = self.get_legal_moves() # obtain and list the possible moves for the player
-                print(f"All Legal moves: {legal}")
-            
-                # Checking to make sure the move the player entered is valid
-                valid_move = False
-                while not valid_move:
-                    col_drop = int(input("\nPlease choose a valid column to drop in: "))
-                    if col_drop in legal: # if legal move, accept it and break out of loop
-                        valid_move = True
-            
-                self.drop_in_slot(col_drop, 1) # making player move
-            else: # Yello player's turn
-                print("\nYellow Player Turn: ")
-                legal = self.get_legal_moves() # Obtain and list the possible moves for the player
-                print(f"All Legal moves: {legal}")
-            
-                # Checking to make sure the move the player entered is valid
-                valid_move = False
-                while not valid_move:
-                    col_drop = int(input("\nPlease choose a valid column to drop in: "))
-                    if col_drop in legal: # if legal move, accept and break out of loop
-                        valid_move = True
-            
-                self.drop_in_slot(col_drop, 2) # making player move
+# tree node for MCTS
+class Node:
+    def __init__(self, move=None, parent=None):
+        self.move = move
+        self.parent = parent
+        self.children = {}
+        self.wi = 0  # total wins
+        self.ni = 0  # num visits
+
+
+# Algorithm 1 - just picks random move
+def uniform_random(board):
+    legal_moves = board.get_legal_moves()
+    selected_move = random.choice(legal_moves)
+    print(f"FINAL Move selected: {selected_move}")
+    return selected_move
+
+
+# UCB calculation for UCT algorithm
+def calculate_ucb(parent_visits, child_wins, child_visits, is_maximizing_player):
+    if child_visits == 0:
+        return float('inf') if is_maximizing_player else float('-inf')
+    
+    exploitation_value = child_wins / child_visits
+    exploration_bonus = 1.41 * math.sqrt(math.log(parent_visits) / child_visits)
+    
+    if is_maximizing_player:
+        return exploitation_value + exploration_bonus
+    else:
+        return exploitation_value - exploration_bonus
+
+
+# Main MCTS implementation - works for both PMCGS and UCT
+def run_mcts(board, player, num_simulations, use_uct, verbose_mode):
+    root = Node()
+    
+    # run simulations
+    for simulation in range(num_simulations):
+        current_node = root
+        sim_board = copy.deepcopy(board)
+        current_player = player
+        path = [current_node]
         
-            turn += 1 # incrementing the turn count to track which player is next
-
-        print(f"Final Board of Manual Playing:\n\n{board}\n")
-
-        winner = self.get_winner() # finding out who won
-        if winner == -1: # Red Player Win
-            print(f"Red Player Wins In {turn} turns!")
-        elif winner == 1: # Yellow Player Win
-            print(f"Yellow Player Wins In {turn} turns!")
-        else: # Game ended in a Draw
-            print("Game was a DRAW!")
-
-    def play_UR(self):
-        self.clear_board() # Making sure we play with a clean board
-
-        turn = 0 # Tracking turns
-        while not self.is_terminal():
-            if turn % 2 == 0: # Player's turn
-                print(f"Current Board During UR:\n{board}") # displays updated board to player
-
-                print("\nRed Player Turn: ")
-                legal = self.get_legal_moves() # obtain and list the possible moves for the player
-                print(f"All Legal moves: {legal}")
+        # Selection and Expansion phase
+        while not sim_board.is_terminal():
+            legal_moves = sim_board.get_legal_moves()
             
-                # Checking to make sure the move the player entered is valid
-                valid_move = False
-                while not valid_move:
-                    col_drop = int(input("\nPlease choose a valid column to drop in: "))
-                    if col_drop in legal: # if legal move, accept it and break out of loop
-                        valid_move = True
+            # find moves we haven't tried yet
+            untried_moves = []
+            for move in legal_moves:
+                if move not in current_node.children:
+                    untried_moves.append(move)
             
-                self.drop_in_slot(col_drop, 1) # making player move
-            else: # Uniform Random turn
-                legal = self.get_legal_moves() # obtaining a list of possible moves
-
-                chosen_move = random.choice(legal)
-
-                print(f"\nFINAL Move Selected: {chosen_move}\n")
-
-                self.drop_in_slot(chosen_move, 2) # playing the randomly chosen move
-            turn += 1 # incrementing turn value
-
-        print(f"Final Board of Uniform Random Playing:\n\n{board}\n")
-
-        winner = self.get_winner() # finding out who won
-        if winner == -1: # Player Wins
-            print(f"Red Player (Person) Wins In {turn} turns!")
-        elif winner == 1: # Uniform Random Wins
-            print(f"Yellow Player (UR) Wins In {turn} turns!")
-        else: # Game ended in a Draw
-            print("Game was a DRAW!")
-
-    def pmcgs_best_move(self, player, num_simulations = 500, verbose = False):
-
-        # Root node = a copy of the current board, player = 1 (red) or 2 (yellow)
-        root_board = copy.deepcopy(self)
-        root = Node(root_board, player_to_move = player)
-
-        for _ in range(num_simulations):
-            node = root
-            path = [node]
-
-            while True:
-                # If full, or game won, stop the selection and/or expansion
-                if node.board.is_terminal():
-                    break
-
-                legal_moves = node.board.get_legal_moves()
-
-                if not legal_moves: # if no leagal moves, break
-                    break
-
-                # Inside of the tree: choose a move at random
-                if verbose: # printing info if verbose option is chosen
-                    print(f"wi: {(node.wi)}")
-                    print(f"ni: {node.ni}")
-
-                chosen_move = random.choice(legal_moves) # choosing move for this simulation at random
-
-                if verbose: # printing info if verbose option is chosen
-                    print(f"Move selected: {chosen_move}")
-
-                if chosen_move in node.children:
-                    # Move is already in tree: go to that child
-                    node = node.children[chosen_move]
-                    path.append(node)
-                else:
-                    # if move is not in tree
-                    # Creating the new board with the move
-                    new_board = copy.deepcopy(node.board)
-                    new_board.drop_in_slot(chosen_move, node.player_to_move)
-
-                    # updating the tree
-                    next_player = 1 if node.player_to_move == 2 else 2
-                    child = Node(new_board, player_to_move=next_player, parent=node, move = chosen_move)
-                    node.children[chosen_move] = child
-                    node = child
-                    path.append(node)
-
-                    if verbose: # print statement for verbose mode
-                        print("NODE ADDED")
-                    break  # we shouldonly add one new node per simulation
-
-            # set up the rollout
-            rollout_board = copy.deepcopy(node.board)
-            current_player = node.player_to_move
-
-            while not rollout_board.is_terminal(): # while the game is not over (full or won)
-                legal_moves = rollout_board.get_legal_moves() # obtaining legal moves
-                move = random.choice(legal_moves) # choosing move at random
-                if verbose: # verbose print statement
-                    print(f"Move selected: {move}")
-
-                # changing the current player after making play
-                rollout_board.drop_in_slot(move, current_player)
-                current_player = 1 if current_player == 2 else 2
-
-            # Terminal node: get value from root player's perspective
-            winner = rollout_board.get_winner()  # -1 for red, 0 for draw, or 1 for yellow
-            value = self.get_result_helper(winner, player)
-
-            if verbose: # verbose print statement
-                print(f"TERMINAL NODE VALUE: {value}")
-
-            # Tracing the path to update visits and rewards
-            for n in path:
-                n.ni += 1
-                n.wi += value
-
-                if verbose: # verbose print statement
-                    print("Updated values:")
-                    print(f"wi: {(n.wi)}")
-                    print(f"ni: {n.ni}")
-
-        # After running simulations, only consider the legal moves at root
-        legal_root_moves = root.board.get_legal_moves()
-
-        move_values = {} # dictionary for storing the values of moves for each column
-        for col in range(1, self.cols + 1): # traversing all columns
-            if col not in legal_root_moves:  # if we can't play in column, there is no value, and should be null
-                print(f"Column {col}: Null")
-                move_values[col] = None
-            else: # if the move is legal
-                child = root.children.get(col)
-                if child is None or child.ni == 0:
-                    # this is a Legal move, but was never visited, value is 0
-                    val = 0.0
-                else: # column was legal and visited
-                    val = child.wi / child.ni # average reward for move
-                move_values[col] = val
-                print(f"Column {col}: {val:.2f}")
-
-        # Choosing the move with the highest value
-        best_move = None
-        best_val = float('-inf') # negative infinity as the lowest value, to be updated with higher values
-        for col, val in move_values.items():
-            if val is None: # if column value is null
-                continue
-            if val > best_val: # updating value and tracking column
-                best_val = val
-                best_move = col
-
-        print(f"FINAL Move selected: {best_move}")
-        return best_move
-
-    def get_result_helper(self, winner, player):
-            if winner == 0: # if no winner, game was a draw
-                return 0
-            if winner == -1:  # Red wins
-                return 1 if player == 1 else -1
-            if winner == 1:   # Yellow wins
-                return 1 if player == 2 else -1
-            return 0  # shouldn't happen
-
-    def play_PMCGS(self, simulations_per_move=500, verbose=False): 
-        self.clear_board() # clean board
-        turn = 0 # tracking turns played
-
-        while not self.is_terminal(): # while board is not full and game is not over
-            print(f"Current Board During PMCGS:\n{board}")
-
-            if turn % 2 == 0: # Red Turn, player
-                print("\nRed Player Turn: ")
-                legal = self.get_legal_moves() # obtaining legal moves and displaying them to player
-                print(f"All Legal moves: {legal}")
-
-                # choosing a move and making sure it is valud
-                valid_move = False
-                while not valid_move:
-                    col_drop = int(input("\nPlease choose a valid column to drop in: "))
-                    if col_drop in legal:
-                        valid_move = True
-
-                self.drop_in_slot(col_drop, 1) # playing valid move
+            if len(untried_moves) > 0:
+                # Expansion - add new node
+                selected_move = random.choice(untried_moves)
+                
+                if verbose_mode:
+                    print(f"wi: {current_node.wi}")
+                    print(f"ni: {current_node.ni}")
+                    
+                    # print UCB values if we're using UCT and have children
+                    if use_uct and len(current_node.children) > 0:
+                        for col in range(1, 8):
+                            if col in current_node.children:
+                                child = current_node.children[col]
+                                ucb_val = calculate_ucb(current_node.ni, child.wi, child.ni, current_player == 2)
+                                if ucb_val == float('inf') or ucb_val == float('-inf'):
+                                    print(f"V{col}: inf")
+                                else:
+                                    print(f"V{col}: {ucb_val:.2f}")
+                    
+                    print(f"Move selected: {selected_move}")
+                    print("NODE ADDED")
+                
+                sim_board.drop_in_slot(selected_move, current_player)
+                new_node = Node(move=selected_move, parent=current_node)
+                current_node.children[selected_move] = new_node
+                current_node = new_node
+                path.append(current_node)
+                current_player = 3 - current_player  # switch players
+                break
             else:
-                # PMCGS algorithm (Yellow)
-                print("\nYellow Player Turn (PMCGS): ")
-
-                #Determining best move using PMCGS algorithm
-                best_move = self.pmcgs_best_move(player=2, num_simulations=simulations_per_move, verbose=verbose)
-                self.drop_in_slot(best_move, 2) # playing best move
-
-            turn += 1 # incrementing turn order
-
-        print(f"Final Board of PMCGS Playing:\n\n{board}\n")
-
-        winner = self.get_winner() # finding out who won if any
-
-        if winner == -1:
-            print(f"Red Player (Human) Wins In {turn} turns!")
-        elif winner == 1:
-            print(f"Yellow Player (PMCGS) Wins In {turn} turns!")
-        else:
-            print("Game was a DRAW!")
-
-
-
-if __name__ == "__main__":
-    board = Board() # create an empty board for a new game
+                # all children already exist - select one
+                if use_uct:
+                    # UCT - use UCB formula to pick best child
+                    if verbose_mode:
+                        print(f"wi: {current_node.wi}")
+                        print(f"ni: {current_node.ni}")
+                        for col in range(1, 8):
+                            if col in current_node.children:
+                                child = current_node.children[col]
+                                ucb_val = calculate_ucb(current_node.ni, child.wi, child.ni, current_player == 2)
+                                if ucb_val == float('inf') or ucb_val == float('-inf'):
+                                    print(f"V{col}: inf")
+                                else:
+                                    print(f"V{col}: {ucb_val:.2f}")
+                    
+                    best_move = None
+                    best_ucb = float('-inf') if current_player == 2 else float('inf')
+                    
+                    for move, child in current_node.children.items():
+                        ucb_value = calculate_ucb(current_node.ni, child.wi, child.ni, current_player == 2)
+                        if current_player == 2:  # maximizing
+                            if ucb_value > best_ucb:
+                                best_ucb = ucb_value
+                                best_move = move
+                        else:  # minimizing
+                            if ucb_value < best_ucb:
+                                best_ucb = ucb_value
+                                best_move = move
+                    
+                    selected_move = best_move
+                else:
+                    # PMCGS - just pick random
+                    selected_move = random.choice(legal_moves)
+                    if verbose_mode:
+                        print(f"wi: {current_node.wi}")
+                        print(f"ni: {current_node.ni}")
+                        print(f"Move selected: {selected_move}")
+                
+                if use_uct and verbose_mode:
+                    print(f"Move selected: {selected_move}")
+                
+                sim_board.drop_in_slot(selected_move, current_player)
+                current_node = current_node.children[selected_move]
+                path.append(current_node)
+                current_player = 3 - current_player
+        
+        # Simulation phase - play random moves till end
+        while not sim_board.is_terminal():
+            random_move = random.choice(sim_board.get_legal_moves())
+            if verbose_mode:
+                print(f"Move selected: {random_move}")
+            sim_board.drop_in_slot(random_move, current_player)
+            current_player = 3 - current_player
+        
+        # get final value
+        final_value = sim_board.get_winner()
+        if verbose_mode:
+            print(f"TERMINAL NODE VALUE: {final_value}")
+        
+        # Backpropagation - update all nodes in path
+        for node in reversed(path):
+            node.ni += 1
+            node.wi += final_value
+            if verbose_mode:
+                print("Updated values:")
+                print(f"wi: {node.wi}")
+                print(f"ni: {node.ni}")
     
-    # board.play_manual()
-    # print(f"Board after manual play:\n{board}")
-    # board.play_UR()
-    # print(f"Board after UR play:\n{board}")
-    board.play_PMCGS(verbose = False)
-  
+    # print final column values
+    for col in range(1, 8):
+        if col in root.children:
+            child = root.children[col]
+            avg_value = child.wi / child.ni
+            print(f"Column {col}: {avg_value:.2f}")
+        else:
+            print(f"Column {col}: Null")
+    
+    # select best move based on average value (not UCB)
+    best_move = None
+    best_avg = float('-inf')
+    for move, child in root.children.items():
+        if child.ni > 0:
+            avg = child.wi / child.ni
+            if avg > best_avg:
+                best_avg = avg
+                best_move = move
+    
+    print(f"FINAL Move selected: {best_move}")
+    return best_move
+
+
+# read game state from file
+def read_board_from_file(filename):
+    f = open(filename, 'r')
+    lines = f.readlines()
+    f.close()
+    
+    lines = [line.strip() for line in lines]
+    
+    algorithm = lines[0]
+    player_char = lines[1]
+    player = 1 if player_char == 'R' else 2
+    
+    board = Board()
+    board_lines = lines[2:8]
+    
+    # read board state - top row is index 0 in file but row 5 in our board
+    for row_idx in range(len(board_lines)):
+        line = board_lines[row_idx]
+        actual_row = 5 - row_idx
+        for col_idx in range(len(line)):
+            char = line[col_idx]
+            if char == 'R':
+                board.board[col_idx][actual_row] = 1
+            elif char == 'Y':
+                board.board[col_idx][actual_row] = 2
+    
+    return algorithm, player, board
+
+
+# Part 2 - play full game between two algorithms
+def play_full_game(algo1, params1, algo2, params2):
+    board = Board()
+    current_player = 1
+    
+    # map player to their algorithm
+    player_algos = {
+        1: (algo1, params1),
+        2: (algo2, params2)
+    }
+    
+    move_count = 0
+    while not board.is_terminal() and move_count < 42:
+        algo_name, algo_params = player_algos[current_player]
+        
+        # get move from algorithm
+        if algo_name == "UR":
+            move = random.choice(board.get_legal_moves())
+        else:
+            # run MCTS without printing
+            root = Node()
+            use_uct = (algo_name == "UCT")
+            
+            for sim in range(algo_params):
+                node = root
+                sim_board = copy.deepcopy(board)
+                player = current_player
+                path = [node]
+                
+                while not sim_board.is_terminal():
+                    moves = sim_board.get_legal_moves()
+                    untried = [m for m in moves if m not in node.children]
+                    
+                    if len(untried) > 0:
+                        m = random.choice(untried)
+                        sim_board.drop_in_slot(m, player)
+                        child = Node(move=m, parent=node)
+                        node.children[m] = child
+                        node = child
+                        path.append(node)
+                        player = 3 - player
+                        break
+                    else:
+                        if use_uct:
+                            # pick best UCB
+                            best_m = None
+                            best_ucb = float('-inf') if player == 2 else float('inf')
+                            for m, ch in node.children.items():
+                                ucb = calculate_ucb(node.ni, ch.wi, ch.ni, player == 2)
+                                if player == 2:
+                                    if ucb > best_ucb:
+                                        best_ucb = ucb
+                                        best_m = m
+                                else:
+                                    if ucb < best_ucb:
+                                        best_ucb = ucb
+                                        best_m = m
+                            m = best_m
+                        else:
+                            m = random.choice(moves)
+                        
+                        sim_board.drop_in_slot(m, player)
+                        node = node.children[m]
+                        path.append(node)
+                        player = 3 - player
+                
+                # rollout
+                while not sim_board.is_terminal():
+                    sim_board.drop_in_slot(random.choice(sim_board.get_legal_moves()), player)
+                    player = 3 - player
+                
+                value = sim_board.get_winner()
+                
+                # backprop
+                for n in reversed(path):
+                    n.ni += 1
+                    n.wi += value
+            
+            # pick best move
+            best_move = None
+            best_val = float('-inf')
+            for m, ch in root.children.items():
+                if ch.ni > 0:
+                    val = ch.wi / ch.ni
+                    if val > best_val:
+                        best_val = val
+                        best_move = m
+            move = best_move
+        
+        board.drop_in_slot(move, current_player)
+        current_player = 3 - current_player
+        move_count += 1
+    
+    winner = board.get_winner()
+    if winner == -1:
+        return 1  # player 1 wins
+    elif winner == 1:
+        return 2  # player 2 wins
+    else:
+        return 0  # draw
+
+
+# run tournament for part 2
+def run_tournament():
+    algorithms = [
+        ("UR", 0),
+        ("PMCGS", 500),
+        ("PMCGS", 10000),
+        ("UCT", 500),
+        ("UCT", 10000)
+    ]
+    
+    names = ["UR", "PMCGS(500)", "PMCGS(10000)", "UCT(500)", "UCT(10000)"]
+    
+    # results[i][j] = wins for algorithm i against algorithm j
+    results = [[0 for j in range(5)] for i in range(5)]
+    
+    print("Starting tournament...")
+    print("This will take a while...\n")
+    
+    for i in range(5):
+        for j in range(5):
+            print(f"Testing {names[i]} vs {names[j]}... ", end="", flush=True)
+            
+            wins = 0
+            for game_num in range(10):
+                winner = play_full_game(algorithms[i][0], algorithms[i][1],
+                                       algorithms[j][0], algorithms[j][1])
+                if winner == 1:
+                    wins += 1
+            
+            results[i][j] = wins
+            print(f"{wins} wins")
+    
+    # print results table
+    print("\n")
+    print("="*80)
+    print("TOURNAMENT RESULTS")
+    print("="*80)
+    print(f"{'':15}", end="")
+    for name in names:
+        print(f"{name:15}", end="")
+    print()
+    print("-"*80)
+    
+    for i in range(5):
+        print(f"{names[i]:15}", end="")
+        for j in range(5):
+            print(f"{results[i][j]:15}", end="")
+        print()
+    print()
+
+
+# main entry point
+if __name__ == "__main__":
+    # check if tournament mode
+    if len(sys.argv) == 2 and sys.argv[1] == "tournament":
+        run_tournament()
+    elif len(sys.argv) == 4:
+        filename = sys.argv[1]
+        verbose_setting = sys.argv[2]
+        num_sims = int(sys.argv[3])
+        
+        algorithm, player, board = read_board_from_file(filename)
+        
+        verbose = (verbose_setting == "Verbose")
+        
+        if algorithm == "UR":
+            uniform_random(board)
+        elif algorithm == "PMCGS":
+            run_mcts(board, player, num_sims, False, verbose)
+        elif algorithm == "UCT":
+            run_mcts(board, player, num_sims, True, verbose)
+        else:
+            print(f"Unknown algorithm: {algorithm}")
+    else:
+        print("Usage: python connect4.py <filename> <Verbose|Brief|None> <num_simulations>")
+        print("   or: python connect4.py tournament")
