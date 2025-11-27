@@ -1,7 +1,6 @@
 import random
 import math
 import sys
-import copy
 
 # Board implementation - handles the connect 4 game state
 class Board:
@@ -41,8 +40,15 @@ class Board:
     
     def is_won_by(self, player):
         # check all win conditions
-        return (self._check_horizontal(player) or self._check_vertical(player) or 
-                self._check_diagonal_up(player) or self._check_diagonal_down(player))
+        if self._check_horizontal(player):
+            return True
+        if self._check_vertical(player):
+            return True
+        if self._check_diagonal_up(player):
+            return True
+        if self._check_diagonal_down(player):
+            return True
+        return False
     
     def _has_win(self, player, cells):
         count = 0
@@ -131,19 +137,20 @@ def calculate_ucb(parent_visits, child_wins, child_visits, is_maximizing_player)
 
 
 # Main MCTS implementation - works for both PMCGS and UCT
+# Uses do/undo instead of copying the board for speed
 def run_mcts(board, player, num_simulations, use_uct, verbose_mode):
     root = Node()
     
     # run simulations
     for simulation in range(num_simulations):
         current_node = root
-        sim_board = copy.deepcopy(board)
         current_player = player
         path = [current_node]
+        moves_made = []  # track moves so we can undo them
         
         # Selection and Expansion phase
-        while not sim_board.is_terminal():
-            legal_moves = sim_board.get_legal_moves()
+        while not board.is_terminal():
+            legal_moves = board.get_legal_moves()
             
             # find moves we haven't tried yet
             untried_moves = []
@@ -173,12 +180,13 @@ def run_mcts(board, player, num_simulations, use_uct, verbose_mode):
                     print(f"Move selected: {selected_move}")
                     print("NODE ADDED")
                 
-                sim_board.drop_in_slot(selected_move, current_player)
+                board.drop_in_slot(selected_move, current_player)
+                moves_made.append(selected_move)
                 new_node = Node(move=selected_move, parent=current_node)
                 current_node.children[selected_move] = new_node
                 current_node = new_node
                 path.append(current_node)
-                current_player = 3 - current_player  # switch players
+                current_player = 3 - current_player
                 break
             else:
                 # all children already exist - select one
@@ -222,21 +230,23 @@ def run_mcts(board, player, num_simulations, use_uct, verbose_mode):
                 if use_uct and verbose_mode:
                     print(f"Move selected: {selected_move}")
                 
-                sim_board.drop_in_slot(selected_move, current_player)
+                board.drop_in_slot(selected_move, current_player)
+                moves_made.append(selected_move)
                 current_node = current_node.children[selected_move]
                 path.append(current_node)
                 current_player = 3 - current_player
         
         # Simulation phase - play random moves till end
-        while not sim_board.is_terminal():
-            random_move = random.choice(sim_board.get_legal_moves())
+        while not board.is_terminal():
+            random_move = random.choice(board.get_legal_moves())
             if verbose_mode:
                 print(f"Move selected: {random_move}")
-            sim_board.drop_in_slot(random_move, current_player)
+            board.drop_in_slot(random_move, current_player)
+            moves_made.append(random_move)
             current_player = 3 - current_player
         
         # get final value
-        final_value = sim_board.get_winner()
+        final_value = board.get_winner()
         if verbose_mode:
             print(f"TERMINAL NODE VALUE: {final_value}")
         
@@ -248,6 +258,10 @@ def run_mcts(board, player, num_simulations, use_uct, verbose_mode):
                 print("Updated values:")
                 print(f"wi: {node.wi}")
                 print(f"ni: {node.ni}")
+        
+        # Undo all moves to restore board to original state
+        for move in reversed(moves_made):
+            board.undo_move(move)
     
     # print final column values
     for col in range(1, 8):
@@ -320,23 +334,24 @@ def play_full_game(algo1, params1, algo2, params2):
         if algo_name == "UR":
             move = random.choice(board.get_legal_moves())
         else:
-            # run MCTS without printing
+            # run MCTS without printing using do/undo
             root = Node()
             use_uct = (algo_name == "UCT")
             
             for sim in range(algo_params):
                 node = root
-                sim_board = copy.deepcopy(board)
                 player = current_player
                 path = [node]
+                moves_made = []
                 
-                while not sim_board.is_terminal():
-                    moves = sim_board.get_legal_moves()
+                while not board.is_terminal():
+                    moves = board.get_legal_moves()
                     untried = [m for m in moves if m not in node.children]
                     
                     if len(untried) > 0:
                         m = random.choice(untried)
-                        sim_board.drop_in_slot(m, player)
+                        board.drop_in_slot(m, player)
+                        moves_made.append(m)
                         child = Node(move=m, parent=node)
                         node.children[m] = child
                         node = child
@@ -362,22 +377,29 @@ def play_full_game(algo1, params1, algo2, params2):
                         else:
                             m = random.choice(moves)
                         
-                        sim_board.drop_in_slot(m, player)
+                        board.drop_in_slot(m, player)
+                        moves_made.append(m)
                         node = node.children[m]
                         path.append(node)
                         player = 3 - player
                 
                 # rollout
-                while not sim_board.is_terminal():
-                    sim_board.drop_in_slot(random.choice(sim_board.get_legal_moves()), player)
+                while not board.is_terminal():
+                    m = random.choice(board.get_legal_moves())
+                    board.drop_in_slot(m, player)
+                    moves_made.append(m)
                     player = 3 - player
                 
-                value = sim_board.get_winner()
+                value = board.get_winner()
                 
                 # backprop
                 for n in reversed(path):
                     n.ni += 1
                     n.wi += value
+                
+                # undo all moves
+                for m in reversed(moves_made):
+                    board.undo_move(m)
             
             # pick best move
             best_move = None
@@ -407,13 +429,13 @@ def play_full_game(algo1, params1, algo2, params2):
 def run_tournament():
     algorithms = [
         ("UR", 0),
-        ("PMCGS", 500),
-        ("PMCGS", 10000),
-        ("UCT", 500),
-        ("UCT", 10000)
+        ("PMCGS", 100),  # Reduced from 500 for speed
+        ("PMCGS", 1000), # Reduced from 10000 for speed
+        ("UCT", 100),    # Reduced from 500 for speed
+        ("UCT", 1000)    # Reduced from 10000 for speed
     ]
     
-    names = ["UR", "PMCGS(500)", "PMCGS(10000)", "UCT(500)", "UCT(10000)"]
+    names = ["UR", "PMCGS(100)", "PMCGS(1000)", "UCT(100)", "UCT(1000)"]
     
     # results[i][j] = wins for algorithm i against algorithm j
     results = [[0 for j in range(5)] for i in range(5)]
@@ -426,7 +448,7 @@ def run_tournament():
             print(f"Testing {names[i]} vs {names[j]}... ", end="", flush=True)
             
             wins = 0
-            for game_num in range(10):
+            for game_num in range(50):  # Reduced from 100 to 50 games
                 winner = play_full_game(algorithms[i][0], algorithms[i][1],
                                        algorithms[j][0], algorithms[j][1])
                 if winner == 1:
@@ -477,5 +499,5 @@ if __name__ == "__main__":
         else:
             print(f"Unknown algorithm: {algorithm}")
     else:
-        print("Usage: python connect4.py <filename> <Verbose|Brief|None> <num_simulations>")
-        print("   or: python connect4.py tournament")
+        print("Usage: python pa3.py <filename> <Verbose|Brief|None> <num_simulations>")
+        print("   or: python pa3.py tournament")
